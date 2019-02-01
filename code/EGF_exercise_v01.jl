@@ -1,9 +1,8 @@
-# the time axis output is jul_t=np.linspace(-maxlag,maglag,len(timeout)),which is centered at 0
-# this is slightly different from the python output (by 1 sample)
+# Empirical Green's function exercise
+
 
 using HDF5
-using Random
-using FFTW
+
 
 const nx=36451
 const nx2=72900
