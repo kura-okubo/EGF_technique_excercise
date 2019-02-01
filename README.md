@@ -1,2 +1,1 @@
-# EGF_technique_exercise
-EGF_technique_exercise
+# Code for Empirical Green's Function technique
