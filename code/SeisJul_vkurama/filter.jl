@@ -1,6 +1,7 @@
 module Filter
 # filter functions
 # Julia translation of obspy.signal.filter
+using DSP
 using ..SeisJul
 export bandpass, bandstop, lowpass, highpass, envelope
 

@@ -1,145 +1,12 @@
-"""
-Empirical Green's function exercise
-02/01/2019 Kurama Okubo
-"""
-
-using SAC, Plots,  FFTW
-
-include("./SeisJul_vkurama/SeisJul.jl")
-include("./SeisJul_vkurama/correlate_kurama.jl")
-include("./SeisJul_vkurama/egf_tools.jl")
-using .Correlate 
-using .EGF_TOOLS
-
-#-------------------------------------#
-#A priori Parameters
-name_dir_greenevent = "Mw4.3"
-name_dir_largeevent = "Mw6.2"
-
-comparison_component = "Z"
-
-finame_greenevent   = "IU.COR..BH"*comparison_component*".M.1991.230.110726.SAC"
-finame_largeevent   = "IU.COR..BH"*comparison_component*".M.1991.229.192945.SAC"
-#-------------------------------------#
-
-#Load dataset
-
-greenevent_sacpath = "../dataset/"*name_dir_greenevent*"/"*finame_greenevent 
-largeevent_sacpath = "../dataset/"*name_dir_largeevent*"/"*finame_largeevent 
-
-function load_SAC_data(name::String)
-    d = SAC.read(name)
-end
+# Empirical Green's function exercise
 
 
-d_green_sac = load_SAC_data(greenevent_sacpath)
-d_large_sac = load_SAC_data(largeevent_sacpath)
+using HDF5
 
 
-d_green = sac2seisjl(d_green_sac)
-d_large = sac2seisjl(d_large_sac)
-
-t_green = d_green.delta .* collect(1:d_green.npts)
-t_large = d_large.delta .* collect(1:d_large.npts)
-
-
-#Filtering data
-vel_raw_green = d_green.x
-
-temp_1_vel_green = detrend(vel_raw_green)
-
-freqmin = 0.1    
-freqmax = 10.0    
-fs = 1/d_green.delta
-
-vel_filtered_green = bandpass(temp_1_vel_green, freqmin, freqmax, fs, corners=6).args[1]
-
-temp1_disp_green = cumtrapz(t_green, vel_filtered_green)
-
-
-fft_disp = fft(temp1_disp_green)
-L = length(fft_disp)
-freq_Fu1 = fs .* collect(0:Int(L/2)) ./ L
-
-cutID = findall(x -> x < freqmin, freq_Fu1)
-fft_disp[cutID] .= 0.0
-
-Pu1_temp =  abs.(fft_disp/L)
-Pu1 = Pu1_temp[1:Int(L/2 + 1)]
-Pu1[2:end-1] = 2 .* Pu1[2:end-1]
-
-
-plot(freq_Fu1, Pu1, line=(:red, 1, :solid),
-    ylabel = "|P1(f)|", 
-    xlabel = "Frequency [Hz]",
-    title = "Single-sided amplitude spectrum of u1",
-    xlim = (1e-4, 10.0),
-    ylim = (1e-2, 1e5),
-    xscale =:log10,
-    yscale =:log10
-    #xticks = 0:0.1:fs/2
-    )
-
-
-temp2_disp_green = real(ifft(fft_disp))
-
-
-temp3_disp_green = detrend(temp2_disp_green)
-disp_filtered_green  = bandpass(temp3_disp_green, freqmin, freqmax, fs).args[1]
-
-plot(t_green, disp_filtered_green)
-
-
-#padding zero with next2pow
-
-N = length(disp_filtered_green)
-u1pad = vcat(disp_filtered_green, zeros(nextpow(2,2*N)-N))
-
-L = length(u1pad)
-
-#Plot single side spectrum
-Fu1 = fft(u1pad)
-Pu1_temp =  abs.(Fu1/L)
-Pu1 = Pu1_temp[1:Int(L/2 + 1)]
-Pu1[2:end-1] = 2 .* Pu1[2:end-1]
-freq_Fu1 = fs .* collect(0:Int(L/2)) ./ L
-
-plot(freq_Fu1, Pu1, line=(:red, 1, :solid),
-    ylabel = "|P1(f)|", 
-    xlabel = "Frequency [Hz]",
-    title = "Single-sided amplitude spectrum of u1",
-    xlim = (1e-1, 10.0),
-    ylim = (1e-2, 1e2),
-    xscale =:log10,
-    yscale =:log10
-    #xticks = 0:0.1:fs/2
-    )
-
-
-disp_large = cumtrapz(t_large, d_large.x)
-#Plot waveform
-
-"""
-
-p1 = plot(xplot, d_green.x, xlabel = "Time [sec]",
-                    ylabel = "cm/s",
-                    linecolor = :black,
-                    title = "Green's event"
-                    )
-
-p2 = plot(xplot, d_large.x, xlabel = "Time [sec]",
-                    ylabel = "cm/s",
-                    linecolor = :red,
-                    title = "Large event"
-                    )
-
-
-plot(p1, p2, layout = (2,1),
-                 size = (800, 1200))
-savefig("../fig/test1.png")
-"""
-
-"""
+const nx=36451
+const nx2=72900
+const ny=47
 const FFTDIR = "/Users/zma/chengxin/KANTO/FFT/"
 const CCFDIR = "/Users/zma/chengxin/KANTO/CCF/"
 const maxlag=800
@@ -364,4 +231,3 @@ outfile = CCFDIR*"test.h5"
 # with small dataset, then do a real run; there got to be an alternative way
 @time process(true,outfile)
 @time process(false,outfile)
-"""

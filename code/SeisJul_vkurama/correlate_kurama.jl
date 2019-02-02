@@ -1,7 +1,7 @@
 module Correlate
 # cross-correlation module
 export clean_up, lstsq, detrend, taper, whiten, correlate
-using ..SeisJul, FFTW
+using ..SeisJul, FFTW, LinearAlgebra
 
 """
     clean_up(A,fs,freqmin,freqmax)
