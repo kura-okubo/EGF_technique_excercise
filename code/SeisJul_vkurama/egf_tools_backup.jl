@@ -1,7 +1,7 @@
 module EGF_TOOLS
 
 # cross-correlation module
-export sac2seisjl, cumtrapz, vel2disp_withfiltering, faultmodel, slipmodel
+export sac2seisjl, cumtrapz, vel2disp_withfiltering
 using FFTW, Plots
 using ..SeisJul
 
@@ -18,8 +18,6 @@ store station data from SAC to SeisJul format.
 
 
 abstract type AbstructSacdata end
-abstract type AbstructFaultmodel end
-abstract type AbstructFaultinfo end
 
 mutable struct sdata <: AbstructSacdata
 
@@ -47,30 +45,6 @@ mutable struct sdata <: AbstructSacdata
 
 end
 
-mutable struct sfault <: AbstructFaultmodel
-
-    ex       ::Float64
-    ez       ::Float64
-    eA       ::Float64
-    es       ::Float64
-    deltaL   ::Float64
-    deltaW   ::Float64
-
-    sfault() = new()
-
-end
-
-mutable struct sfaultinfo <: AbstructFaultinfo
-
-    L               ::Float64
-    W               ::Float64
-    A               ::Float64
-    AverageSlip     ::Float64
-    NumofElement    ::Int
-
-    sfaultinfo() = new()
-
-end
 
 function sac2seisjl(sacdata)
 
@@ -168,86 +142,6 @@ function vel2disp_withfiltering(v1::AbstractArray, t1::AbstractArray, fs::Float6
     d1       = bandpass(d1_temp3, freqmin, freqmax, fs)
 
     return d1
-end
-
-"""
-Make fault model for large event
-    faultmodel(NL, NW, Faultaspectratio, m0, M0)
-
-"""
-
-function faultmodel(A::Float64, mu::Float64, NL::Int, NW::Int, Faultaspectratio::Float64, m0::Float64, M0::Float64; 
-    slipmodel::String="homogeneous")
-
-    if slipmodel == "homogeneous"
-        #compute average slip from M0 = mu*D*S
-        s_avrg = M0/(mu*A)
-
-        L = sqrt(Faultaspectratio*A)
-        W = L/Faultaspectratio
-
-        deltaL = L/NL
-        deltaW = W/NW
-
-        sf = Array{sfault}(undef, NL, NW)
-
-        for i = 1:NL
-            for j = 1:NW
-
-                ex = (float(i)-0.5) * deltaL
-                ez = (float(j)-0.5) * deltaW
-                eA = deltaL * deltaW
-                es = s_avrg
-
-                sf[i,j] = sfault()
-                sf[i,j].ex = ex
-                sf[i,j].ez = ez
-                sf[i,j].eA = eA
-                sf[i,j].es = es
-                sf[i,j].deltaL = deltaL
-                sf[i,j].deltaW = deltaW
-            end
-        end
-
-        sfinfo = sfaultinfo()
-        sfinfo.L = L
-        sfinfo.W = W
-        sfinfo.A = A
-        sfinfo.AverageSlip = s_avrg
-        sfinfo.NumofElement = NL*NW
-
-        return sf, sfinfo
-
-    else
-        error("error: fault model is not defined.")
-    end
-end
-
-"""
-Make slip model for large event
-    slipmodel(Trise, maxslip, slipmodel)
-
-"""
-
-function slipmodel(t::Float64, Trise::Float64, maxslip::Float64; slipfunc::String="heaviside")
-
-    if slipfunc == "heaviside"
-        
-        if t < Trise
-            slip = 0
-        else
-            slip = maxslip
-        end
-
-        return slip
-
-    elseif slipmodel == "brune"
-        error("error: brune model is not implemented.")
-
-    else
-        error("error: slip model is not defined.")
-    end
-
 end
 
 end

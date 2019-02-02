@@ -85,9 +85,12 @@ fid["disp_large"] = disp_filtered_large
 close(fid)
 
 """
-save("../dataset/egfdata/egfdata.jld", "t_green", t_green, "disp_green", disp_filtered_green,
-    "t_large", t_large, "disp_large", disp_filtered_large)
-
-
-
+fid = jldopen("../dataset/egfdata/egfdata.jld", "w")
+fid["t_green"] = t_green
+fid["t_large"] = t_large
+fid["disp_green"] = disp_filtered_green
+fid["disp_large"] = disp_filtered_large
+fid["d_green"] = d_green
+fid["d_large"] = d_large
+close(fid)
 
