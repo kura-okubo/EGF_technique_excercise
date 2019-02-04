@@ -1,8 +1,8 @@
 module EGF_TOOLS
 
 # cross-correlation module
-export sac2seisjl, cumtrapz, vel2disp_withfiltering, faultmodel, slipmodel
-using FFTW, Plots
+export sac2seisjl, cumtrapz, vel2disp_withfiltering, faultmodel, slipmodel, get_euijk, closest_index, synthesize_large_quake
+using Dates, FFTW, Plots
 using ..SeisJul
 
 include("correlate_kurama.jl")
@@ -147,8 +147,8 @@ function vel2disp_withfiltering(v1::AbstractArray, t1::AbstractArray, fs::Float6
     fft_d1[cutID]  .= 0.0
 
     if IsPlot
-        Pu1_temp        =  abs.(fft_d1/L)
-        Pu1_temp        = Pu1_temp[1:Int(L/2 + 1)]
+        Pu1       =  abs.(fft_d1/L)
+        Pu1       = Pu1[1:Int(L/2 + 1)]
         Pu1[2:end-1]    = 2 .* Pu1[2:end-1]
         
         plot(freq_d1, Pu1, line=(:red, 1, :solid),
@@ -180,7 +180,8 @@ function faultmodel(A::Float64, mu::Float64, NL::Int, NW::Int, Faultaspectratio:
     slipmodel::String="homogeneous")
 
     if slipmodel == "homogeneous"
-        #compute average slip from M0 = mu*D*S
+        #compute average slip on each element fault by M0 = mu*D*S
+        #s_avrg = M0/(mu*A*NL*NW)
         s_avrg = M0/(mu*A)
 
         L = sqrt(Faultaspectratio*A)
@@ -241,13 +242,120 @@ function slipmodel(t::Float64, Trise::Float64, maxslip::Float64; slipfunc::Strin
 
         return slip
 
-    elseif slipmodel == "brune"
-        error("error: brune model is not implemented.")
-
     else
         error("error: slip model is not defined.")
     end
 
 end
+
+function get_euijk(T_at_k::Float64, t::AbstractArray, disp::AbstractArray)
+
+    if T_at_k < 0 #if T is negative, no signal contributes from small event
+        euijk = 0.0
+    else
+
+        #improve searching time 
+        tmid = (t[1] + t[end])/2
+
+        if tmid > T_at_k
+            tid =  findfirst(x -> x >= T_at_k, @views t)
+            euijk = disp[tid]
+        else
+            tid =  length(t) + 2 - findfirst(x -> x < T_at_k, @views t[end:-1:1])
+            euijk = disp[tid]
+        end
+
+    end
+    
+end
+
+"""
+Synthsize signal of large event
+    synthesize_large_quake(t_syn, NL, NW, NRT, sfault, vr, slipfunc)
+
+"""
+
+function synthesize_large_quake(t_syn::Array, t_green::Array, disp_green::Array, NL::Int64, NW::Int64, NRT::Int64, 
+    sfault::Array, vr::Float64, T_rise::Float64, mu::Float64, m0::Float64, dtslip::Float64;
+    slipfunc::String="heaviside")
+
+
+    #assign nucleation patch
+    #Assume nucleatin from the middle of fault
+    Nucleation_x = sfault[round(Int,NL/2), round(Int,NW/2)].ex
+    Nucleation_z = sfault[round(Int,NL/2), round(Int,NW/2)].ez
+
+
+    u_syn = zeros(Float64, length(t_syn),1)
+
+    #For debug
+    elapsedtime_i = Array{Float64,1}(undef,100000)
+    elapsedtime_k = Array{Float64,1}(undef,100000)
+    elapsedtime_f1 = Array{Float64,1}(undef,100000)
+    elapsedtime_f2 = Array{Float64,1}(undef,100000)
+
+    for l = 1:length(t_syn)
+    #for l = 1:1500
+
+        if mod(l,1000) == 0
+            
+            println("Last "*string(length(t_syn)-l))
+            println(now())
+
+        end
+
+        t1 = t_syn[l]
+
+        usum = 0
+
+        elapsedtime_i[l] = @elapsed for i = 1:NL
+
+            for j = 1:NW
+
+                elapsedtime_k[l] = @elapsed for k = 1:NRT
+
+                    #distance from the nucleation to the target element
+                    rdist = sqrt((sfault[i,j].ex - Nucleation_x)^2 + (sfault[i,j].ez - Nucleation_z)^2)
+                    #println(rdist)
+                    tijr = rdist/vr #[s]
+                    tijks = k*dtslip #[s] 
+
+                    T_at_k = t1 - tijr - tijks
+
+                    #get signal of small event at T_at_k
+
+                    elapsedtime_f1[l] = @elapsed euijk = get_euijk(T_at_k, t_green, disp_green)
+
+                    #get slip at ij and time k
+                    elapsedtime_f2[l] = @elapsed slip_atk = slipmodel(tijks, T_rise, sfault[i,j].es, slipfunc=slipfunc) 
+
+                    usum += (mu * sfault[i,j].eA * slip_atk / m0) * euijk
+
+                end
+            end
+        end
+
+        u_syn[l] = usum
+
+    end
+
+    fo = open("./elapsedtime.dat", "w")
+
+    write(fo, "index, elapsed_i, elapsed_k, elapsed_f1, elapsed_f2 [ms]\n")
+
+    for i1 = 1:length(t_syn)
+        if mod(i1,1000) == 0
+        
+        write(fo, string([i1, elapsedtime_i[i1]*1e6, elapsedtime_k[i1]*1e6, elapsedtime_f1[i1]*1e6, elapsedtime_f2[i1]*1e6])*"\n")
+
+        end
+    end
+
+    close(fo)
+
+    return u_syn
+
+end
+
 
 end

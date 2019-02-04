@@ -3,7 +3,7 @@ Empirical Green's function exercise
 02/01/2019 Kurama Okubo
 """
 
-using Plots, FFTW, JLD, Dates
+using Plots, FFTW, JLD, Dates, BenchmarkTools
 
 include("./SeisJul_vkurama/SeisJul.jl")
 include("./SeisJul_vkurama/correlate_kurama.jl")
@@ -37,12 +37,13 @@ Faultaspectratio = 2.0 # L(length)/W(width)
 NL = 11 # number of element area in the direction of L
 NW = 5  # number of element area in the direction of W
 
+totalfaultarea = 10e6 # a priori total slip area [m^2]
+
 #Rupture info
 vr = 0.6*cs # rupture velocity [m/s]
 T_rise = 2.0  # rise time [s]
 dtslip = 0.1 # time step of slipfunction [s]
 
-totalfaultarea = 30e6 # apriori total slip area [m^2]
 slipfunc = "heaviside" # "heaviside", "brune"
 
 #-------------------------------------#
@@ -74,6 +75,13 @@ M0 = 10^(1.5*(Mw0+10.7)) * 1e-7 #[J]
 
 sfault, sfaultinfo = faultmodel(totalfaultarea, mu, NL, NW, Faultaspectratio, m0, M0, slipmodel = "homogeneous")
 
+foinfo = open("../dataset/faultmodelinfo.dat", "w")
+write(foinfo, "L [km], W [km], A [km^2], Slip Average [m], NumofElement, deltaL, deltaW\n")
+str = string([sfaultinfo.L/1e3, sfaultinfo.W/1e3, sfaultinfo.A/1e6, sfaultinfo.AverageSlip,
+	 sfaultinfo.NumofElement, sfault[1,1].deltaL, sfault[1,1].deltaW])
+write(foinfo, str)
+close(foinfo)
+
 #assign nucleation patch
 Nucleation_x = sfault[round(Int,NL/2), round(Int,NW/2)].ex
 Nucleation_z = sfault[round(Int,NL/2), round(Int,NW/2)].ez
@@ -82,10 +90,15 @@ Nucleation_z = sfault[round(Int,NL/2), round(Int,NW/2)].ez
 t_syn = t_large
 u_syn = zeros(Float64, length(t_syn),1)
 
+elapsedtime_i = Array{Float64,1}(undef,100000)
+elapsedtime_k = Array{Float64,1}(undef,100000)
+elapsedtime_f1 = Array{Float64,1}(undef,100000)
+elapsedtime_f2 = Array{Float64,1}(undef,100000)
 
 for l = 1:length(t_syn)
+#for l = 1:1500
 
-	if mod(l,100) == 0
+	if mod(l,1000) == 0
 		
 		println("Last "*string(length(t_syn)-l))
 		println(now())
@@ -96,9 +109,11 @@ for l = 1:length(t_syn)
 
 	usum = 0
 
-	for i = 1:NL
+	elapsedtime_i[l] = @elapsed for i = 1:NL
+
 		for j = 1:NW
-			for k = 1:NRT
+
+			elapsedtime_k[l] = @elapsed for k = 1:NRT
 
 				#distance from the nucleation to the target element
 				rdist = sqrt((sfault[i,j].ex - Nucleation_x)^2 + (sfault[i,j].ez - Nucleation_z)^2)
@@ -110,16 +125,10 @@ for l = 1:length(t_syn)
 
 				#get signal of small event at T_at_k
 
-				if T_at_k < 0 #if T is negative, no signal contributes from small event
-					euijk = 0.0
-
-				else 
-					tid = findfirst(x -> x >= T_at_k, t_green)
-					euijk = disp_green[tid]
-				end
+				elapsedtime_f1[l] = @elapsed euijk = get_euijk(T_at_k, t_green, disp_green)
 
 				#get slip at ij and time k
-				slip_atk = slipmodel(tijks, T_rise, sfault[i,j].es, slipfunc=slipfunc)	
+				elapsedtime_f2[l] = @elapsed slip_atk = slipmodel(tijks, T_rise, sfault[i,j].es, slipfunc=slipfunc)	
 
 				usum += (mu * sfault[i,j].eA * slip_atk / m0) * euijk
 
@@ -131,6 +140,27 @@ for l = 1:length(t_syn)
 
 end
 
+fo = open("./elapsedtime.dat", "w")
+
+write(fo, "index, elapsed_i, elapsed_k, elapsed_f1, elapsed_f2 [ms]\n")
+
+for i1 = 1:length(t_syn)
+	if mod(i1,1000) == 0
+		
+		write(fo, string([i1, elapsedtime_i[i1]*1e6, elapsedtime_k[i1]*1e6, elapsedtime_f1[i1]*1e6, elapsedtime_f2[i1]*1e6])*"\n")
+
+	end
+end
+
+close(fo)
+
+fid = jldopen("../dataset/egfdata/syndata.jld", "w")
+fid["t_small"] = t_green
+fid["u_small"] = disp_green
+fid["t_large"] = t_large
+fid["u_syn"] = u_syn
+fid["u_ovs"] = disp_large
+close(fid)
 #Plot
 
 """
